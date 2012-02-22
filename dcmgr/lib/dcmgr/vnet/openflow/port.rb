@@ -30,15 +30,22 @@ module Dcmgr
 
         def init_eth
           @port_type = PORT_TYPE_ETH
-          queue_flow Flow.new(0, 6, {:udp => nil, :in_port => OpenFlowController::OFPP_LOCAL, :dl_dst => 'ff:ff:ff:ff:ff:ff', :nw_src => '0.0.0.0', :nw_dst => '255.255.255.255', :tp_src => 68, :tp_dst => 67}, {:output => port_info.number})
-          queue_flow Flow.new(0, 2, {:in_port => port_info.number},  {:resubmit => TABLE_ROUTE_DIRECTLY})
+          queue_flow Flow.new(TABLE_CLASSIFIER, 6, {:udp => nil, :in_port => OpenFlowController::OFPP_LOCAL,
+                                :dl_dst => 'ff:ff:ff:ff:ff:ff', :nw_src => '0.0.0.0', :nw_dst => '255.255.255.255', :tp_src => 68, :tp_dst => 67},
+                              {:output => port_info.number})
+          queue_flow Flow.new(TABLE_CLASSIFIER, 5, {:udp => nil, :in_port => port_info.number,
+                                :dl_dst => 'ff:ff:ff:ff:ff:ff', :nw_src => '0.0.0.0', :nw_dst => '255.255.255.255', :tp_src => 68, :tp_dst =>67},
+                              {:local => nil})
+          queue_flow Flow.new(TABLE_CLASSIFIER, 2, {:in_port => port_info.number},  {:resubmit => TABLE_ROUTE_DIRECTLY})
           queue_flow Flow.new(TABLE_MAC_ROUTE, 0, {}, {:output => port_info.number})
           queue_flow Flow.new(TABLE_ROUTE_DIRECTLY, 0, {}, {:output => port_info.number})
           queue_flow Flow.new(TABLE_LOAD_DST, 0, {}, [{:load_reg0 => port_info.number}, {:resubmit => TABLE_LOAD_SRC}])
           queue_flow Flow.new(TABLE_LOAD_SRC, 4, {:in_port => port_info.number}, {:output_reg0 => nil})
           queue_flow Flow.new(TABLE_ARP_ANTISPOOF, 1, {:arp => nil, :in_port => port_info.number}, {:resubmit => TABLE_ARP_ROUTE})
           queue_flow Flow.new(TABLE_ARP_ROUTE, 0, {:arp => nil}, {:output => port_info.number})
-          queue_flow Flow.new(TABLE_METADATA_OUTGOING, 4, {:in_port => port_info.number}, {:drop => nil})
+
+          queue_flow Flow.new(TABLE_METADATA_INCOMING, 2, {:in_port => OpenFlowController::OFPP_LOCAL}, {:output => port_info.number})
+          queue_flow Flow.new(TABLE_METADATA_OUTGOING, 4, {:in_port => port_info.number}, {:local => nil})
         end
 
         def init_gre_tunnel
@@ -59,6 +66,32 @@ module Dcmgr
           queue_flow Flow.new(TABLE_CLASSIFIER, 7, {:in_port => port_info.number}, [{:load_reg1 => network.id}, {:resubmit => TABLE_VIRTUAL_SRC}])
           queue_flow Flow.new(TABLE_VIRTUAL_DST, 2, {:reg1 => network.id, :dl_dst => hw}, {:output => port_info.number})
         end
+
+        # Install flows:
+
+        def install_catch_ip nw_proto, match
+          match[:in_port] = port_info.number
+          match[:dl_type] = 0x0800
+          match[:nw_proto] = nw_proto
+          queue_flow Flow.new(TABLE_LOAD_DST, 3, match, {:controller => nil})
+        end
+
+        def install_static_d_transport nw_proto, local_hw, local_ip, remote_ip, remote_port
+          src_match = {:dl_type => 0x0800, :nw_proto => nw_proto}
+          src_match[:nw_src] = remote_ip if not remote_ip =~ /\/0$/
+          src_match[:tp_src] = remote_port if remote_port != 0
+
+          incoming_match = {:dl_dst => local_hw, :nw_dst => local_ip}.merge(src_match)
+          queue_flow Flow.new(TABLE_LOAD_DST, 3, incoming_match, [{:load_reg0 => port_info.number}, {:resubmit => TABLE_LOAD_SRC}])
+
+          dst_match = {:dl_type => 0x0800, :nw_proto => nw_proto}
+          dst_match[:nw_dst] = remote_ip if not remote_ip =~ /\/0$/
+          dst_match[:tp_dst] = remote_port if remote_port != 0
+
+          outgoing_match = {:in_port => port_info.number, :dl_src => local_hw, :nw_src => local_ip}.merge(dst_match)
+          queue_flow Flow.new(TABLE_LOAD_SRC, 3, outgoing_match, {:output_reg0 => nil})
+        end
+
 
         def install_arp_antispoof hw, ip
           # Require correct ARP source IP/MAC from instance, and protect the instance IP from ARP spoofing.

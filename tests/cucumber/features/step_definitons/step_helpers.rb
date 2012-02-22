@@ -32,6 +32,7 @@ class APITest
 
   api_ver ''
   api_base_uri "http://localhost:9001/api"
+
   parser UseJSONParser
   headers 'X-VDC-ACCOUNT-UUID' => 'a-shpoolxx'
 
@@ -59,6 +60,20 @@ module RetryHelper
   #include Config
   
   DEFAULT_WAIT_PERIOD=60*5
+  
+  def retry_while_not(wait_sec=DEFAULT_WAIT_PERIOD, &blk)
+    start_at = Time.now
+    lcount=0
+    loop {
+      if blk.call
+        raise("Retry Failure: block returned true. Retried #{lcount} times")
+      else
+        sleep 2
+      end
+      lcount += 1
+      break if (Time.now - start_at) > wait_sec
+    }
+  end
   
   def retry_until(wait_sec=DEFAULT_WAIT_PERIOD, &blk)
     start_at = Time.now
@@ -104,17 +119,18 @@ module InstanceHelper
 
     cmd = "ssh -o 'StrictHostKeyChecking no' -i #{private_key_path} #{user}@#{res["vif"].first["ipv4"]["address"]} '#{command}'"
 
+    output = ""
     if seconds > 0
       retry_until(seconds) do
-        `#{cmd}`
+        output = %x{#{cmd}}
         $?.exitstatus == 0
       end
     else
-      `#{cmd}`
+      output = %x{#{cmd}}
     end
 
     FileUtils.rm(private_key_path)
-    $?
+    output
   end
 
   def retry_until_loggedin(instance_id, user, seconds = 0)

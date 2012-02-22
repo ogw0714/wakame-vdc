@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 
-set -e
+set +e
 
 abs_path=$(cd $(dirname $0) && pwd)
 prefix_path=$(cd ${abs_path}/../ && pwd)
@@ -30,12 +30,15 @@ case ${mode} in
     ;;
   cleanup)
     ;;
-  openflow)
-    # interactive mode with OpenFlow
-    with_openflow=yes
-    run_standalone
+  multiple)
+    set +e
+    . builder/conf/nodes.conf
+    cleanup_multiple
+    run_multiple
+    check_ready_multiple
     screen_attach
     screen_close
+    ci_post_process "`git show | awk '/^commit / { print $2}'`" $excode
     [ -f "${tmp_path}/vdc-pid.log" ] && {
       wait $(cat ${tmp_path}/vdc-pid.log)
     }

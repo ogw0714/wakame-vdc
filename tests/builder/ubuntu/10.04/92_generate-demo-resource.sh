@@ -97,7 +97,7 @@ for s in ${storage_nodes}; do
     [ "${s}" = "${ipaddr}" ] && {
         dest=$(uname -a | awk '{print $1}')
     } || {
-        dest=$(echo "uname -a" | ssh ${s} | awk '{print $1}')
+        dest=$(ssh ${s} 'uname -a' | awk '{print $1}')
     }
     staname=demo$(echo ${s} | sed -e 's/\./ /g' | awk '{print $4}')
     case ${dest} in
@@ -249,6 +249,7 @@ MoU4FfcO/Tf7b+qwp40OjN0dr7xDwIWXih2LrAxGK2Lw43hlC5huYmqpEIYoiag+
 PxIk/VB7tQxkp4Rtv005mWHPUYlh8x4lMqiVAhPJzEBfN9UEfkrk
 -----END RSA PRIVATE KEY-----
 EOS
+chmod 600 /tmp/pri.pem
 
 shlog ./bin/vdc-manage keypair add --account-id ${account_id} --uuid ssh-demo --private-key=/tmp/pri.pem --public-key=/tmp/pub.pem
 
